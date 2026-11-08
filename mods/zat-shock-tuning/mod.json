@@ -1,7 +1,7 @@
 {
-  "id": "zat-shock-tuning",
-  "name": "Zat Shock & Fire Tuning - Server Test",
-  "version": "0.5.0-alpha.1",
+  "id": "bob-shock-tuning",
+  "name": "Bob Shock Tuning",
+  "version": "0.5.0-alpha.4",
   "capabilities": [
     "patch"
   ],

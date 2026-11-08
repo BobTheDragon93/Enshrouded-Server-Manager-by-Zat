@@ -8,10 +8,10 @@ end
 local function keys(value, allowed, label)
     if type(value) ~= "table" then fail(label .. " must be a table") end
     for key in pairs(value) do
-        if not allowed[key] then fail("Unknown setting: " .. label .. "." .. tostring(key)) end
+        if allowed[key] == nil then fail("Unknown setting: " .. label .. "." .. tostring(key)) end
     end
-    for key in pairs(allowed) do
-        if value[key] == nil then fail("Missing setting: " .. label .. "." .. key) end
+    for key, required in pairs(allowed) do
+        if required and value[key] == nil then fail("Missing setting: " .. label .. "." .. key) end
     end
 end
 local function number(value, storage, label)
@@ -106,7 +106,7 @@ end
 if config.fire_arrows == nil then config.fire_arrows = require("fire_arrows").defaults() end
 local fire_effects=require("fire_effects")
 if config.fire_effects==nil then config.fire_effects=fire_effects.defaults() end
-keys(config, {schema_version=true, chain_lightning=true, lightning_arrows=true, eternal_arrows=true, mass_destruction=true, arrow_chain=true, fire_arrows=true, fire_effects=true}, "config")
+keys(config, {schema_version=true, chain_lightning=true, arc_lightning=false, lightning_arrows=true, eternal_arrows=true, mass_destruction=true, arrow_chain=true, fire_arrows=true, fire_effects=true}, "config")
 local selected_fire_effects=fire_effects.validate(config.fire_effects,{fail=fail,keys=keys,number=number})
 if config.schema_version ~= 1 then fail("Unsupported configuration schema") end
 local revision = tostring(game.version):match("^(%d+)|")
@@ -151,6 +151,91 @@ for _, def in ipairs(spell_defs) do
     plan(item.itemTargetingSetup, "targetingRange", 24, chain.targeting_range, def[1] .. ".targeting_range")
     local mana = impact_config(item.impactValues, 2938334926, "keen::impact::Sint32ImpactConfig", def[1] .. ".mana")
     plan(mana, "value", def[4], settings.mana, def[1] .. ".mana")
+end
+if config.arc_lightning ~= nil then
+    local arc_items = {}
+    keys(config.arc_lightning, {eternal_36=true, eternal_45=true, propagation=false, pulse_interval_ms=false}, "arc_lightning")
+    for _, def in ipairs({
+        {"eternal_36", "654ac987-5b16-46df-8c61-c23affe9c66b", 49},
+        {"eternal_45", "282598c7-6055-4d7d-bfae-aa60779f0c51", 53},
+    }) do
+        local label = "arc_lightning." .. def[1]
+        local settings = config.arc_lightning[def[1]]
+        keys(settings, {damage=true, mana=true, charge_seconds=true}, label)
+        number(settings.damage, "float32", label .. ".damage")
+        number(settings.mana, "int32", label .. ".mana")
+        number(settings.charge_seconds, "float32", label .. ".charge_seconds")
+        local item = resource(def[2], "keen::ItemInfo")
+        if not item.damageSetup.isSet or not close(item.damageSetup.distribution.magicalLightningDamage, 1) then
+            fail(label .. ": unexpected damage setup")
+        end
+        unique(item.sequences, function(x)
+            return x.sequence == "4b1dea51-ee2b-452c-a3e1-7fd14605df02" and x.triggeredBy == "Primary"
+        end, label .. ".sequence")
+        arc_items[#arc_items + 1] = item
+        local mana = impact_config(item.impactValues, 2938334926, "keen::impact::Sint32ImpactConfig", label .. ".mana")
+        local charge = impact_config(item.impactValues, 1469785687, "keen::impact::FloatImpactConfig", label .. ".charge_seconds")
+        plan(item.damageSetup, "dmgMod", 0.56, settings.damage, label .. ".damage")
+        plan(mana, "value", def[3], settings.mana, label .. ".mana")
+        plan(charge, "value", 0.3, settings.charge_seconds, label .. ".charge_seconds")
+    end
+    local interval = config.arc_lightning.pulse_interval_ms
+    if interval ~= nil then
+        number(interval, "uint32", "arc_lightning.pulse_interval_ms")
+        if interval > 1000 or (interval > 0 and interval < 50) then
+            fail("arc_lightning.pulse_interval_ms must be 0 or between 50 and 1000")
+        end
+        if interval > 0 and interval ~= 500 then
+            -- The channel loop emits two impacts. Keep costs and presentation
+            -- events aligned, and make the gap across the loop seam equal.
+            local sequence = resource("4b1dea51-ee2b-452c-a3e1-7fd14605df02", "keen::actor::ActorSequenceResource")
+            local sub = unique(sequence.subSequences, function(x)
+                return x.name == "Attack_Player_Staff_Overlay_Channel_Lightning"
+            end, "Arc Lightning channel")
+            local start, second, finish = 766666682, 1250000025, 1766666702
+            local step = interval * 1000000
+            local impacts = {}
+            for _, entry in ipairs(sub.events) do
+                if entry.type == "keen::actor::SpawnImpact"
+                    and entry.value.impact == "b8326171-b67a-41c7-8c0b-b30750d8ff7a" then
+                    impacts[#impacts + 1] = entry.value.time.value
+                end
+            end
+            if #impacts ~= 2 or impacts[1] ~= start or impacts[2] ~= second then
+                fail("Arc Lightning: unsupported or conflicting pulse layout")
+            end
+            local loop = unique(sub.events, function(x)
+                return x.type == "keen::actor::LoopEvent" and x.value.time.value == start
+            end, "Arc Lightning pulse loop").value
+            plan(loop.duration, "value", finish - start, 2 * step, "arc_lightning.loop_duration")
+            plan(sub.length, "value", 2316666713, 2316666713 + start + 2 * step - finish, "arc_lightning.sequence_length")
+            for _, entry in ipairs(sub.events) do
+                local time = entry.value.time
+                local old = time.value
+                if old >= start then
+                    local new
+                    if old < second then
+                        new = start + math.floor((old - start) * step / (second - start))
+                    elseif old < finish then
+                        new = start + step + math.floor((old - second) * step / (finish - second))
+                    else
+                        new = start + 2 * step + old - finish
+                    end
+                    plan(time, "value", old, new, "arc_lightning.event_time")
+                end
+            end
+        end
+    end
+    local propagation = config.arc_lightning.propagation
+    if propagation ~= nil then
+        keys(propagation, {enabled=true, spread_radius=true, targets_per_spread=true, max_jumps=true, spread_delay_ms=true}, "arc_lightning.propagation")
+        number(propagation.spread_radius, "float32", "arc_lightning.propagation.spread_radius")
+        local settings = {enabled=propagation.enabled, targets_per_spread=propagation.targets_per_spread,
+            max_jumps=propagation.max_jumps, spread_delay_ms=propagation.spread_delay_ms}
+        local change = require("spell_chain").plan(settings, propagation.spread_radius, nil,
+            {fail=fail,keys=keys,number=number,resource=resource}, arc_items)
+        if change then changes[#changes + 1] = change end
+    end
 end
 local sequence = resource("12f3cda4-c44d-4a09-bc76-749e40f1c60f", "keen::actor::ActorSequenceResource")
 local events = {}

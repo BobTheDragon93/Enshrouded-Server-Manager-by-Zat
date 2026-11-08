@@ -285,3 +285,14 @@ a chain-lightning spell and with two players casting/shooting independently.
 Baseline guards reject unsupported builds and conflicting resource edits. To
 restore, stop the server, disable/remove this mod in ESM-Z, apply remaining mods,
 and restart. Preserve your config text before removing or upgrading.
+
+Eternal Arc Lightning I and II (experimental)
+---------------------------------------------
+In config.lua, arc_lightning.propagation.enabled opts both Eternal tiers into
+nearest-first branching on each successful locked-target pulse. The pulse's
+original hit is retained and the custom chain replaces its native secondary
+collision path. Each pulse owns its own history and pending-target reservations,
+so a target can be hit by a later pulse, but converging branches of one pulse
+cannot hit it twice. max_jumps is shared by the branches of a single pulse.
+The stock consumable does not supply the opt-in flag. Validate against a clean
+game baseline and verify the per-pulse behavior in multiplayer.

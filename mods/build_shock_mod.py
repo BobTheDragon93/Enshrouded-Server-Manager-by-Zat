@@ -3,14 +3,15 @@ from pathlib import Path
 import hashlib
 import json
 import zipfile
+import argparse
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "mods" / "zat-shock-tuning"
 
 
-def build():
+def build(active_config=None):
     manifest = json.loads((SOURCE / "mod.json").read_text(encoding="utf-8"))
-    destination = ROOT / "dist" / "mods" / f"Zat-Shock-Tuning-v{manifest['version']}.zip"
+    destination = ROOT / "dist" / "mods" / f"Bob-Shock-Tuning-v{manifest['version']}.zip"
     destination.parent.mkdir(parents=True, exist_ok=True)
     files = ["mod.json", "src/mod.lua", "src/arrow_chain.lua", "src/spell_chain.lua",
              "src/impact_builder.lua", "src/chain_propagation.lua", "src/fire_arrows.lua", "src/ground_fire.lua", "src/config.lua",
@@ -20,7 +21,8 @@ def build():
         for name in files:
             info = zipfile.ZipInfo(f"{manifest['id']}/{name}", date_time=(2026, 10, 21, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, (SOURCE / name).read_bytes())
+            source = active_config if active_config is not None and name == "src/config.lua" else SOURCE / name
+            archive.writestr(info, source.read_bytes())
         info = zipfile.ZipInfo(f"{manifest['id']}/src/config.defaults.lua", date_time=(2026, 10, 21, 0, 0, 0))
         info.compress_type = zipfile.ZIP_DEFLATED
         archive.writestr(info, (SOURCE / "src/config.lua").read_bytes())
@@ -31,4 +33,6 @@ def build():
 
 
 if __name__ == "__main__":
-    build()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--active-config", type=Path)
+    build(parser.parse_args().active_config)

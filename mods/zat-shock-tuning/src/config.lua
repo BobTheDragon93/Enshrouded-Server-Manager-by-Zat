@@ -1,4 +1,4 @@
--- Zat Shock Tuning 0.5.0-alpha.1. Edit through ESM-Z > Mods > Configure.
+-- Bob Shock Tuning 0.5.0-alpha.4. Edit through ESM-Z > Mods > Configure.
 -- Stop the server, save, Apply & Validate Mods, then start the server.
 -- All shipped numbers preserve vanilla gameplay. config.defaults.lua is a backup.
 -- Distances are game units; the exact in-game geometry needs multiplayer testing.
@@ -26,6 +26,15 @@ return {
             eternal_45 = { damage = 1.22, mana = 220 },
             consumable_47 = { damage = 1.22, mana = 200 },
         },
+    },
+    arc_lightning = {
+        -- Shared channel timing, including consumable Lightning Channel. 500 keeps the exact vanilla cadence.
+        pulse_interval_ms = 500, -- Vanilla averages 500 ms (483 ms, then 517 ms).
+        -- Each successful pulse starts its own chain. Disabled by default.
+        propagation = { enabled = false, spread_radius = 3.7, targets_per_spread = 2, max_jumps = 6, spread_delay_ms = 250 },
+        -- Charge duration in seconds. The sustained hit interval is separate.
+        eternal_36 = { damage = 0.56, mana = 49, charge_seconds = 0.3 },
+        eternal_45 = { damage = 0.56, mana = 53, charge_seconds = 0.3 },
     },
     lightning_arrows = {
         -- Direct-hit raw damage coefficient. Does NOT add an explosion or change crit chance.

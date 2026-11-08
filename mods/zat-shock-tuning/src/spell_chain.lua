@@ -1,32 +1,41 @@
--- Opt-in propagation for the five player spells' selected casting sequence.
+-- Opt-in propagation for Chain Lightning casts and individual Eternal Arc pulses.
 local B=require("impact_builder")
 local propagation=require("chain_propagation")
 local M={}
-function M.plan(settings,radius,cast,api)
+function M.plan(settings,radius,cast,api,arc_items)
+    local label=arc_items and "arc_lightning.propagation" or "chain_lightning.propagation"
     if type(settings)=="table" and settings.spread_delay_ms==nil then settings.spread_delay_ms=250 end
-    api.keys(settings,{enabled=true,targets_per_spread=true,max_jumps=true,spread_delay_ms=true},"chain_lightning.propagation")
-    if type(settings.enabled)~="boolean" then api.fail("chain_lightning.propagation.enabled must be true or false") end
-    api.number(settings.targets_per_spread,"uint32","chain_lightning.propagation.targets_per_spread")
-    api.number(settings.max_jumps,"uint32","chain_lightning.propagation.max_jumps")
-    api.number(settings.spread_delay_ms,"uint32","chain_lightning.propagation.spread_delay_ms")
+    api.keys(settings,{enabled=true,targets_per_spread=true,max_jumps=true,spread_delay_ms=true},label)
+    if type(settings.enabled)~="boolean" then api.fail(label..".enabled must be true or false") end
+    api.number(settings.targets_per_spread,"uint32",label..".targets_per_spread")
+    api.number(settings.max_jumps,"uint32",label..".max_jumps")
+    api.number(settings.spread_delay_ms,"uint32",label..".spread_delay_ms")
     if not settings.enabled then return end
-    local p=api.resource("e28f0d79-e2fe-46ba-8d82-9ba368cb30c7","keen::ImpactProgram")
+    local guid=arc_items and "b8326171-b67a-41c7-8c0b-b30750d8ff7a" or "e28f0d79-e2fe-46ba-8d82-9ba368cb30c7"
+    local p=api.resource(guid,"keen::ImpactProgram")
     local signature={}
     for _,e in ipairs(p.dataLayout) do signature[#signature+1]=string.pack("<I4I4I4I4I4",
         e.name.value,e.configId.value,e.type.value,e.size,e.offsetInBytes)..e.dbgName..string.char(0) end
-    if #p.code~=477 or B.hash(p.code,"<I4")~=1582077647 or #p.data~=1361
-        or B.hash(p.data,"B")~=1813197745 or #p.dataLayout~=80
-        or B.fnv(table.concat(signature))~=3679545508 or p.stackSize~=256
+    if #p.code~=(arc_items and 473 or 477)
+        or B.hash(p.code,"<I4")~=(arc_items and 3696472098 or 1582077647)
+        or #p.data~=(arc_items and 1329 or 1361)
+        or B.hash(p.data,"B")~=(arc_items and 1345229789 or 1813197745)
+        or #p.dataLayout~=80
+        or B.fnv(table.concat(signature))~=(arc_items and 3825030913 or 3679545508) or p.stackSize~=256
         or #p.codeShutdown~=1 or p.codeShutdown[1]~=30 or #p.queryCallIds~=0
         or #p.usedStreams~=1 or p.usedStreams[1]~="OnCollision"
-        or p.id.value~=826044855 or p.programGuid~="e28f0d79-e2fe-46ba-8d82-9ba368cb30c7" then
+        or p.id.value~=(arc_items and 3907315843 or 826044855) or p.programGuid~=guid then
         api.fail("Spell chain: conflicting or unsupported native program")
     end
-    local config_id=B.fnv("ZatSpellChain.Enabled")
-    for _,entry in ipairs(cast.impactValues.simple) do
-        if entry.value.configId.value==config_id then api.fail("Spell chain: conflicting sequence config") end
+    local namespace=arc_items and "ZatArcChain" or "ZatSpellChain"
+    local config_id=B.fnv(namespace..".Enabled")
+    local sources=arc_items or {cast}
+    for _,source in ipairs(sources) do
+        for _,entry in ipairs(source.impactValues.simple) do
+            if entry.value.configId.value==config_id then api.fail(label..": conflicting impact config") end
+        end
     end
-    local b=B.new(p,api,"ZatSpellChain")
+    local b=B.new(p,api,namespace)
     -- Default false in the shared program. Only the chosen player casting
     -- sequence supplies true; other native sequences keep the original flow.
     b.bool("enabled",false,config_id)
@@ -36,9 +45,12 @@ function M.plan(settings,radius,cast,api)
     local pre=#b.code
     b.load("enabled");b.branch(10,"capture_done")
     propagation.capture(b,"Get_targetlock::targetId","GetRoot::entityId")
-    b.mark("capture_done");b.emit(8,98) -- retain the original timer pop and initial damage.
+    b.mark("capture_done");b.emit(8,arc_items and 93 or 98) -- retain the original timer pop and initial damage.
     local post=#b.code
-    b.load("enabled");b.branch(9,"spell_start");b.emit(8,143)
+    b.load("enabled");b.branch(9,arc_items and "arc_start" or "spell_start");b.emit(8,arc_items and 168 or 143)
+    -- The Arc success continuation has a timer result to pop. The blocked
+    -- path still goes straight to its original native destination.
+    if arc_items then b.mark("arc_start");b.emit(27) end
     local context={initial="Get_targetlock::targetId",root="GetRoot::entityId",
         damage_args=function()
             return {false,"true",false,false,false,false,false,"Material::valueId",
@@ -54,14 +66,18 @@ function M.plan(settings,radius,cast,api)
         end}
     propagation.emit(b,profile,context)
     propagation.finish(b);b.emit(29,30)
-    b.finish();b.code[95]=pre;b.code[277]=post
-    return {label="chain_lightning.nearest_fanout_program",before=0,after=1,apply=function()
-        local values={};for _,entry in ipairs(cast.impactValues.simple) do values[#values+1]=entry end
-        local guid="8254bf47-cc20-4ca7-8514-28ae6cc1811d"
-        values[#values+1]={type="keen::impact::BoolImpactConfig",value={locaTag=cast.impactValues.simple[1].value.locaTag,isSigned=false,
-            valueFormat="Normal",id=guid,configId={value=config_id},type={value=3365180733},configGuid=guid,
-            objectId="bfe73b78-d32f-4d4f-afdc-2d3801289b15",value=true}}
-        cast.impactValues.simple=values
+    b.finish()
+    b.code[arc_items and 90 or 95]=pre
+    b.code[arc_items and 165 or 277]=post
+    return {label=arc_items and "arc_lightning.nearest_fanout_program" or "chain_lightning.nearest_fanout_program",before=0,after=1,apply=function()
+        for _,source in ipairs(sources) do
+            local values=B.array(source.impactValues.simple)
+            local guid="8254bf47-cc20-4ca7-8514-28ae6cc1811d"
+            values[#values+1]={type="keen::impact::BoolImpactConfig",value={locaTag=values[1].value.locaTag,isSigned=false,
+                valueFormat="Normal",id=guid,configId={value=config_id},type={value=3365180733},configGuid=guid,
+                objectId="bfe73b78-d32f-4d4f-afdc-2d3801289b15",value=true}}
+            source.impactValues.simple=values
+        end
         print("[Zat Shock Tuning] Spell frontier native storage: "..b.capacity.." pending spreaders; slots are reused")
         b.apply()
     end}
