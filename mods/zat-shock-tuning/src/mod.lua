@@ -154,7 +154,7 @@ for _, def in ipairs(spell_defs) do
 end
 if config.arc_lightning ~= nil then
     local arc_items = {}
-    keys(config.arc_lightning, {eternal_36=true, eternal_45=true, propagation=false, pulse_interval_ms=false}, "arc_lightning")
+    keys(config.arc_lightning, {eternal_36=true, eternal_45=true, propagation=false, pulse_interval_ms=false, camera_shake=false}, "arc_lightning")
     for _, def in ipairs({
         {"eternal_36", "654ac987-5b16-46df-8c61-c23affe9c66b", 49},
         {"eternal_45", "282598c7-6055-4d7d-bfae-aa60779f0c51", 53},
@@ -178,6 +178,23 @@ if config.arc_lightning ~= nil then
         plan(item.damageSetup, "dmgMod", 0.56, settings.damage, label .. ".damage")
         plan(mana, "value", def[3], settings.mana, label .. ".mana")
         plan(charge, "value", 0.3, settings.charge_seconds, label .. ".charge_seconds")
+    end
+    local camera_shake = config.arc_lightning.camera_shake
+    if camera_shake ~= nil and type(camera_shake) ~= "boolean" then
+        fail("arc_lightning.camera_shake must be true or false")
+    end
+    if camera_shake ~= true then
+        local sequence = resource("4b1dea51-ee2b-452c-a3e1-7fd14605df02", "keen::actor::ActorSequenceResource")
+        local count = 0
+        for _, sub in ipairs(sequence.subSequences) do
+            for _, entry in ipairs(sub.events) do
+                if entry.type == "keen::actor::CameraShakeEvent" then
+                    count = count + 1
+                    plan(entry.value, "trauma", 0.2, 0, "arc_lightning.camera_shake")
+                end
+            end
+        end
+        if count ~= 4 then fail("Arc Lightning: unsupported camera shake layout") end
     end
     local interval = config.arc_lightning.pulse_interval_ms
     if interval ~= nil then

@@ -1,4 +1,4 @@
--- Bob Shock Tuning 0.5.0-alpha.4. Edit through ESM-Z > Mods > Configure.
+-- Bob Shock Tuning 0.5.0-alpha.5. Edit through ESM-Z > Mods > Configure.
 -- Stop the server, save, Apply & Validate Mods, then start the server.
 -- All shipped numbers preserve vanilla gameplay. config.defaults.lua is a backup.
 -- Distances are game units; the exact in-game geometry needs multiplayer testing.
@@ -28,6 +28,7 @@ return {
         },
     },
     arc_lightning = {
+        camera_shake = false, -- true restores the shared channel's camera shake.
         -- Shared channel timing, including consumable Lightning Channel. 500 keeps the exact vanilla cadence.
         pulse_interval_ms = 500, -- Vanilla averages 500 ms (483 ms, then 517 ms).
         -- Each successful pulse starts its own chain. Disabled by default.
